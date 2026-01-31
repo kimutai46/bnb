@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nairobi Rush - Endless Racing</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const CANVAS_WIDTH = 400;
+        const CANVAS_HEIGHT = 600;
+        const ROAD_WIDTH = 300;
+        const LANE_WIDTH = ROAD_WIDTH / 3;
+        const CAR_WIDTH = 40;
+        const CAR_HEIGHT = 70;
+
+        function NairobiRush() {
+            const canvasRef = useRef(null);
+            const [score, setScore] = useState(0);
+            const [highScore, setHighScore] = useState(0);
+            const [gameOver, setGameOver] = useState(false);
+            const [isPaused, setIsPaused] = useState(false);
+            const [speed, setSpeed] = useState(3);
+            const gameStateRef = useRef({
+                playerX: CANVAS_WIDTH / 2 - CAR_WIDTH / 2,
+                playerY: CANVAS_HEIGHT - CAR_HEIGHT - 20,
+                currentLane: 1,
+                traffic: [],
+                roadMarking: 0,
+                landmarks: [],
+                matatus: [],
+                distance: 0
+            });
+
+            const landmarks = [
+                "KICC", "Times Tower", "Kenyatta Ave", "Uhuru Highway", 
+                "Moi Ave", "Haile Selassie", "Ronald Ngala", "Tom Mboya St",
+                "Parliament Rd", "City Hall", "Kencom", "GPO"
+            ];
+
+            const matutuNames = [
+                "NGONG ROUTE", "THIKA RD", "MAMA NGINA", "TOWN SERVICE",
+                "SUPER METRO", "CITI HOPPA", "KBS", "DOUBLE M"
+            ];
+
+            const colors = {
+                player: '#22c55e',
+                traffic: ['#ef4444', '#3b82f6', '#eab308', '#8b5cf6', '#ec4899'],
+                matatu: '#fbbf24',
+                road: '#374151',
+                grass: '#22c55e',
+                marking: '#fef08a'
+            };
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+
+                const handleKeyDown = (e) => {
+                    if (gameOver) return;
+                    const state = gameStateRef.current;
+
+                    if (e.key === ' ') {
+                        e.preventDefault();
+                        setIsPaused(prev => !prev);
+                        return;
+                    }
+
+                    if (e.key === 'ArrowLeft' && state.currentLane > 0) {
+                        state.currentLane--;
+                        state.playerX = (CANVAS_WIDTH - ROAD_WIDTH) / 2 + state.currentLane * LANE_WIDTH + (LANE_WIDTH - CAR_WIDTH) / 2;
+                    } else if (e.key === 'ArrowRight' && state.currentLane < 2) {
+                        state.currentLane++;
+                        state.playerX = (CANVAS_WIDTH - ROAD_WIDTH) / 2 + state.currentLane * LANE_WIDTH + (LANE_WIDTH - CAR_WIDTH) / 2;
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+
+                const spawnTraffic = () => {
+                    const state = gameStateRef.current;
+                    if (Math.random() < 0.02 + speed * 0.002) {
+                        const lane = Math.floor(Math.random() * 3);
+                        const isMatatu = Math.random() < 0.3;
+                        const x = (CANVAS_WIDTH - ROAD_WIDTH) / 2 + lane * LANE_WIDTH + (LANE_WIDTH - CAR_WIDTH) / 2;
+                        
+                        state.traffic.push({
+                            x,
+                            y: -CAR_HEIGHT,
+                            lane,
+                            isMatatu,
+                            color: isMatatu ? colors.matatu : colors.traffic[Math.floor(Math.random() * colors.traffic.length)],
+                            matutuName: isMatatu ? matutuNames[Math.floor(Math.random() * matutuNames.length)] : null
+                        });
+                    }
+                };
+
+                const spawnLandmark = () => {
+                    const state = gameStateRef.current;
+                    if (Math.random() < 0.005) {
+                        state.landmarks.push({
+                            y: -50,
+                            text: landmarks[Math.floor(Math.random() * landmarks.length)],
+                            side: Math.random() < 0.5 ? 'left' : 'right'
+                        });
+                    }
+                };
+
+                const checkCollision = () => {
+                    const state = gameStateRef.current;
+                    for (let car of state.traffic) {
+                        if (
+                            state.playerX < car.x + CAR_WIDTH &&
+                            state.playerX + CAR_WIDTH > car.x &&
+                            state.playerY < car.y + CAR_HEIGHT &&
+                            state.playerY + CAR_HEIGHT > car.y
+                        ) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+
+                const drawRoad = () => {
+                    const state = gameStateRef.current;
+                    const roadX = (CANVAS_WIDTH - ROAD_WIDTH) / 2;
+
+                    // Grass
+                    ctx.fillStyle = colors.grass;
+                    ctx.fillRect(0, 0, roadX, CANVAS_HEIGHT);
+                    ctx.fillRect(roadX + ROAD_WIDTH, 0, roadX, CANVAS_HEIGHT);
+
+                    // Road
+                    ctx.fillStyle = colors.road;
+                    ctx.fillRect(roadX, 0, ROAD_WIDTH, CANVAS_HEIGHT);
+
+                    // Road markings
+                    ctx.strokeStyle = colors.marking;
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([20, 20]);
+
+                    for (let i = 0; i < 3; i++) {
+                        const y = (state.roadMarking + i * 40) % 80 - 40;
+                        for (let j = 0; j < Math.ceil(CANVAS_HEIGHT / 40) + 1; j++) {
+                            ctx.beginPath();
+                            ctx.moveTo(roadX + LANE_WIDTH, y + j * 80);
+                            ctx.lineTo(roadX + LANE_WIDTH, y + j * 80 + 40);
+                            ctx.stroke();
+
+                            ctx.beginPath();
+                            ctx.moveTo(roadX + LANE_WIDTH * 2, y + j * 80);
+                            ctx.lineTo(roadX + LANE_WIDTH * 2, y + j * 80 + 40);
+                            ctx.stroke();
+                        }
+                    }
+                    ctx.setLineDash([]);
+
+                    // Road edges
+                    ctx.strokeStyle = '#fef08a';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(roadX, 0);
+                    ctx.lineTo(roadX, CANVAS_HEIGHT);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(roadX + ROAD_WIDTH, 0);
+                    ctx.lineTo(roadX + ROAD_WIDTH, CANVAS_HEIGHT);
+                    ctx.stroke();
+                };
+
+                const drawCar = (x, y, color, isMatatu = false, name = null) => {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(x, y, CAR_WIDTH, CAR_HEIGHT);
+                    
+                    // Windows
+                    ctx.fillStyle = '#1e3a8a';
+                    ctx.fillRect(x + 5, y + 10, CAR_WIDTH - 10, 15);
+                    ctx.fillRect(x + 5, y + CAR_HEIGHT - 25, CAR_WIDTH - 10, 15);
+
+                    // Wheels
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x - 3, y + 15, 6, 12);
+                    ctx.fillRect(x + CAR_WIDTH - 3, y + 15, 6, 12);
+                    ctx.fillRect(x - 3, y + CAR_HEIGHT - 27, 6, 12);
+                    ctx.fillRect(x + CAR_WIDTH - 3, y + CAR_HEIGHT - 27, 6, 12);
+
+                    // Matatu text
+                    if (isMatatu && name) {
+                        ctx.fillStyle = '#000';
+                        ctx.font = 'bold 8px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(name, x + CAR_WIDTH / 2, y + CAR_HEIGHT / 2);
+                    }
+                };
+
+                const drawLandmarks = () => {
+                    const state = gameStateRef.current;
+                    ctx.fillStyle = '#1f2937';
+                    ctx.font = 'bold 14px Arial';
+                    
+                    state.landmarks.forEach(landmark => {
+                        const x = landmark.side === 'left' ? 10 : CANVAS_WIDTH - 100;
+                        
+                        // Building
+                        ctx.fillRect(x, landmark.y, 80, 40);
+                        
+                        // Text
+                        ctx.fillStyle = '#fbbf24';
+                        ctx.textAlign = landmark.side === 'left' ? 'left' : 'right';
+                        ctx.fillText(landmark.text, landmark.side === 'left' ? x + 5 : x + 75, landmark.y + 25);
+                        ctx.fillStyle = '#1f2937';
+                    });
+                };
+
+                const gameLoop = () => {
+                    if (gameOver || isPaused) return;
+
+                    const state = gameStateRef.current;
+                    
+                    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    
+                    // Update
+                    state.roadMarking += speed;
+                    if (state.roadMarking >= 80) state.roadMarking = 0;
+
+                    spawnTraffic();
+                    spawnLandmark();
+
+                    // Update traffic
+                    state.traffic = state.traffic.filter(car => {
+                        car.y += speed;
+                        return car.y < CANVAS_HEIGHT;
+                    });
+
+                    // Update landmarks
+                    state.landmarks = state.landmarks.filter(landmark => {
+                        landmark.y += speed * 0.5;
+                        return landmark.y < CANVAS_HEIGHT;
+                    });
+
+                    // Check collision
+                    if (checkCollision()) {
+                        setGameOver(true);
+                        if (score > highScore) {
+                            setHighScore(score);
+                        }
+                        return;
+                    }
+
+                    // Update score and speed
+                    state.distance += speed;
+                    if (state.distance >= 10) {
+                        setScore(prev => prev + 1);
+                        state.distance = 0;
+                        if (score % 50 === 0 && speed < 8) {
+                            setSpeed(prev => prev + 0.5);
+                        }
+                    }
+
+                    // Draw
+                    drawRoad();
+                    drawLandmarks();
+                    
+                    state.traffic.forEach(car => {
+                        drawCar(car.x, car.y, car.color, car.isMatatu, car.matutuName);
+                    });
+
+                    drawCar(state.playerX, state.playerY, colors.player);
+
+                    // Draw Kenyan flag on player car
+                    const flagY = state.playerY + 5;
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(state.playerX + 10, flagY, 20, 3);
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fillRect(state.playerX + 10, flagY + 3, 20, 3);
+                    ctx.fillStyle = '#22c55e';
+                    ctx.fillRect(state.playerX + 10, flagY + 6, 20, 3);
+                };
+
+                const interval = setInterval(gameLoop, 1000 / 60);
+
+                return () => {
+                    clearInterval(interval);
+                    window.removeEventListener('keydown', handleKeyDown);
+                };
+            }, [gameOver, isPaused, speed, score, highScore]);
+
+            const resetGame = () => {
+                gameStateRef.current = {
+                    playerX: CANVAS_WIDTH / 2 - CAR_WIDTH / 2,
+                    playerY: CANVAS_HEIGHT - CAR_HEIGHT - 20,
+                    currentLane: 1,
+                    traffic: [],
+                    roadMarking: 0,
+                    landmarks: [],
+                    matatus: [],
+                    distance: 0
+                };
+                setScore(0);
+                setSpeed(3);
+                setGameOver(false);
+                setIsPaused(false);
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-green-800 via-black to-red-800 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl">
+                        <div className="text-center mb-4">
+                            <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-600 via-black to-red-600 mb-2">
+                                🇰🇪 NAIROBI RUSH 🚗
+                            </h1>
+                            <p className="text-gray-600 font-semibold">Navigate through CBD traffic!</p>
+                        </div>
+
+                        <div className="flex justify-between mb-4 text-lg font-semibold">
+                            <div className="bg-green-100 px-4 py-2 rounded-lg border-2 border-green-500">
+                                Distance: <span className="text-green-700">{score}m</span>
+                            </div>
+                            <div className="bg-red-100 px-4 py-2 rounded-lg border-2 border-red-500">
+                                Best: <span className="text-red-700">{highScore}m</span>
+                            </div>
+                            <div className="bg-yellow-100 px-4 py-2 rounded-lg border-2 border-yellow-500">
+                                Speed: <span className="text-yellow-700">{speed.toFixed(1)}x</span>
+                            </div>
+                        </div>
+
+                        {isPaused && !gameOver && (
+                            <div className="text-center mb-4 bg-yellow-100 border-2 border-yellow-400 rounded-lg p-3">
+                                <p className="text-xl font-bold text-yellow-800">⏸️ PAUSED</p>
+                                <p className="text-sm text-yellow-700">Press SPACE to continue</p>
+                            </div>
+                        )}
+
+                        {gameOver && (
+                            <div className="text-center mb-4 bg-red-100 border-2 border-red-400 rounded-lg p-4">
+                                <p className="text-2xl font-bold text-red-700 mb-2">💥 Accident in CBD!</p>
+                                <p className="text-lg text-red-600">Distance: {score}m</p>
+                                {score === highScore && score > 0 && (
+                                    <p className="text-sm text-red-500 mt-1">🏆 New Record!</p>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex justify-center mb-4">
+                            <canvas
+                                ref={canvasRef}
+                                width={CANVAS_WIDTH}
+                                height={CANVAS_HEIGHT}
+                                className="border-4 border-gray-800 rounded-lg shadow-xl"
+                            />
+                        </div>
+
+                        <div className="text-center space-y-3">
+                            {gameOver ? (
+                                <button
+                                    onClick={resetGame}
+                                    className="bg-gradient-to-r from-green-600 via-black to-red-600 hover:from-green-700 hover:via-gray-900 hover:to-red-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-all hover:scale-105"
+                                >
+                                    🔄 Drive Again
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => setIsPaused(prev => !prev)}
+                                    className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-all hover:scale-105"
+                                >
+                                    {isPaused ? '▶️ Resume' : '⏸️ Pause'}
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="mt-6 text-center text-sm text-gray-600 space-y-2">
+                            <p>⬅️➡️ Use Arrow Keys to change lanes</p>
+                            <p>⌨️ Press SPACE to pause</p>
+                            <p>🚕 Avoid traffic and matatus!</p>
+                            <p className="text-xs text-gray-500 mt-3">
+                                Look out for CBD landmarks • Speed increases with distance
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<NairobiRush />, document.getElementById('root'));
+    </script>
+</body>
+</html>
